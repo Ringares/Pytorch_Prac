@@ -5,7 +5,7 @@ from model.layer import FactorizationMachine, FeaturesEmbedding, FeaturesLinear
 
 class FactorizationMachineModel(torch.nn.Module):
     """
-    A pytorch implementation of Factorization Machine.
+    Implementation of Factorization Machine.
 
     Reference:
         S Rendle, Factorization Machines, 2010.
