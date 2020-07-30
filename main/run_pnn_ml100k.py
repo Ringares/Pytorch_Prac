@@ -1,5 +1,7 @@
 # coding:utf8
+import os
 from collections import namedtuple
+from pathlib import Path
 
 import pandas as pd
 import torch
@@ -15,7 +17,11 @@ from utils.regularization import Regularization
 __author__ = 'Sheng Lin'
 __date__ = '2020/7/2'
 
-data = pd.read_csv('~/Code/Machine_Learning/D2L/data/ml-100k-joined.csv')
+import stackprinter
+
+stackprinter.set_excepthook()
+
+data = pd.read_csv(Path(os.path.dirname(__file__)) / '../data/ml-100k-joined.csv')
 data = data.iloc[:1000]
 used_feature = ['user_id', 'item_id', 'rating',
                 'age', 'gender', 'occupation', 'zipcode',
@@ -56,7 +62,7 @@ vali_target = target.iloc[vali_idx.values]
 class CSVDataSet(Dataset):
     def __init__(self, data, target):
         self.data = data.values
-        self.target = [1 if i >=3 else 0 for i in target.values]
+        self.target = [1 if i >= 3 else 0 for i in target.values]
 
     def __len__(self):
         return len(self.data)

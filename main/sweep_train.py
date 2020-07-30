@@ -1,6 +1,7 @@
 # coding:utf8
 import os
 import sys
+from pathlib import Path
 
 curPath = os.path.abspath(os.path.dirname(__file__))
 rootPath = os.path.split(curPath)[0]
@@ -34,7 +35,7 @@ hyperparameter_defaults = dict(
 wandb.init(project='deep_ctr', config=hyperparameter_defaults)
 config = wandb.config
 
-data = pd.read_csv('~/Code/Machine_Learning/D2L/data/ml-100k-joined.csv')
+data = pd.read_csv(Path(os.path.dirname(__file__)) / '../data/ml-100k-joined.csv')
 used_feature = ['user_id', 'item_id', 'rating',
                 'age', 'gender', 'occupation', 'zipcode',
                 'unknown', 'Action', 'Adventure', 'Animation', 'Children\'s',

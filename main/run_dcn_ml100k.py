@@ -1,6 +1,9 @@
 # coding:utf8
+# from utils.learner import Learner
+import os
 from collections import namedtuple
 from functools import partial
+from pathlib import Path
 
 import pandas as pd
 import torch
@@ -10,12 +13,11 @@ from torch.utils.data import Dataset, DataLoader
 
 from model.dcn import DeepAndCrossNetwork
 from utils import callback
-# from utils.learner import Learner
 
 __author__ = 'Sheng Lin'
 __date__ = '2020/7/2'
 
-data = pd.read_csv('~/Code/Machine_Learning/D2L/data/ml-100k-joined.csv')
+data = pd.read_csv(Path(os.path.dirname(__file__)) / '../data/ml-100k-joined.csv')
 used_feature = ['user_id', 'item_id', 'rating',
                 'age', 'gender', 'occupation', 'zipcode',
                 'unknown', 'Action', 'Adventure', 'Animation', 'Children\'s',
@@ -55,7 +57,7 @@ vali_target = target.iloc[vali_idx.values]
 class CSVDataSet(Dataset):
     def __init__(self, data, target):
         self.data = data.values
-        self.target = [1 if i >=3 else 0 for i in target.values]
+        self.target = [1 if i >= 3 else 0 for i in target.values]
 
     def __len__(self):
         return len(self.data)
