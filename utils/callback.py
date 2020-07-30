@@ -1,10 +1,16 @@
 # coding:utf8
-from functools import partial
-from sklearn.metrics import roc_auc_score
 import math
 import re
+import time
 import typing
+from collections import OrderedDict
+from functools import partial
+
 import torch
+import wandb
+from sklearn.metrics import roc_auc_score
+
+from utils.regularization import Regularization
 
 __author__ = 'Sheng Lin'
 __date__ = '2020/5/14'
@@ -40,9 +46,13 @@ def param_getter(m): return m.parameters()
 
 class Learner():
     def __init__(self, model, data, loss_func, opt_func=torch.optim.Adam, lr=1e-2, splitter=param_getter,
-                 cbs=None, cb_funcs=None):
-        self.model, self.data, self.loss_func, self.opt_func, self.lr, self.splitter = model, data, loss_func, opt_func, lr, splitter
+                 cbs=None, cb_funcs=None, regular=None):
+        self.model, self.data, self.loss_func = model, data, loss_func
+        self.opt_func, self.lr, self.splitter = opt_func, lr, splitter
         self.in_train, self.logger, self.opt = False, print, None
+        self.regular = regular
+        if self.regular:
+            self.regular.weight_info(self.model)
 
         # NB: Things marked "NEW" are covered in lesson 12
         # NEW: avoid need for set_runner
@@ -65,16 +75,19 @@ class Learner():
     def one_batch(self, i, xb, yb):
         try:
             self.iter = i
-            self.xb, self.yb = xb, yb;
+            self.xb, self.yb = xb, yb
             self('begin_batch')
-            self.pred = self.model(self.xb);
+            self.pred = self.model(self.xb)
             self('after_pred')
-            self.loss = self.loss_func(self.pred, self.yb);
+            self.loss = self.loss_func(self.pred, self.yb)
+            # add additional regularization (to device)
+            if self.regular and isinstance(self.regular, Regularization):
+                self.loss = self.loss + self.regular(self.model)
             self('after_loss')
             if not self.in_train: return
-            self.loss.backward();
+            self.loss.backward()
             self('after_backward')
-            self.opt.step();
+            self.opt.step()
             self('after_step')
             self.opt.zero_grad()
         except CancelBatchException:
@@ -106,11 +119,13 @@ class Learner():
         try:
             self.do_begin_fit(epochs)
             for epoch in range(epochs):
-                if not self.do_begin_epoch(epoch): self.all_batches()
+                if not self.do_begin_epoch(epoch):
+                    self.all_batches()
 
                 with torch.no_grad():
                     self.dl = self.data.valid_dl
-                    if not self('begin_validate'): self.all_batches()
+                    if not self('begin_validate'):
+                        self.all_batches()
                 self('after_epoch')
 
         except CancelTrainException:
@@ -147,9 +162,6 @@ class Callback:
         f = getattr(self, cb_name, None)
         if f and f(): return True
         return False
-
-
-import time
 
 
 class TrainEvalCallback(Callback):
@@ -261,6 +273,69 @@ class CudaCallback(Callback):
     def begin_batch(self):
         self.run.xb = self.xb.to(self.device)
         self.run.yb = self.yb.to(self.device)
+
+
+class WandbCallback(Callback):
+    """
+    if metrics is None and need_auc==Flase:
+    then only loss will be considered
+    """
+
+    def __init__(self, metrics, need_auc=False, need_time=True, proj_name='Default', verbose=True, config=None, initialized=False):
+        if not initialized:
+            wandb.init(project=proj_name, config=config)
+
+        self.train_stats = AvgStats(metrics, True)
+        self.valid_stats = AvgStats(metrics, False)
+        self.train_stats_name = ['train_loss'] + (['train_' + i.__name__ for i in metrics] if metrics else [])
+        self.vali_stats_name = ['vali_loss'] + (['vali_' + i.__name__ for i in metrics] if metrics else [])
+
+        self.need_time = need_time
+        self.verbose = verbose
+        self.need_auc = need_auc
+        if self.need_auc:
+            self.epoch_pred = []
+            self.epoch_y = []
+
+    def begin_fit(self):
+        wandb.watch(self.model)
+
+    def begin_epoch(self):
+        self.train_stats.reset()
+        self.valid_stats.reset()
+        self.run.epoch_ts = time.time()
+
+    def after_loss(self):
+        stats = self.train_stats if self.in_train else self.valid_stats
+        with torch.no_grad():
+            stats.accumulate(self.run)
+
+    def begin_validate(self):
+        if self.need_auc:
+            self.epoch_pred = []
+            self.epoch_y = []
+
+    def after_pred(self):
+        if self.need_auc:
+            self.epoch_pred += self.run.pred.cpu().data.flatten().numpy().tolist()
+            self.epoch_y += self.run.yb.cpu().numpy().tolist()
+
+    def after_epoch(self):
+        auc = roc_auc_score(self.epoch_y, self.epoch_pred) if self.need_auc else None
+        if self.verbose:
+            self.run.epoch_ts = time.time() - self.run.epoch_ts
+            time_str = f"{self.run.epoch_ts:.1f} sec" if self.need_time and self.run.epoch_ts else ''
+            print(f"epoch {self.epoch}: {self.train_stats} {self.valid_stats} {time_str}")
+            if auc:
+                print(f"epoch {self.epoch}: vali_auc: {auc}")
+        logs = OrderedDict({'epoch': self.epoch})
+        logs.update(zip(self.train_stats_name, self.train_stats.avg_stats))
+        logs.update(zip(self.vali_stats_name, self.valid_stats.avg_stats))
+        if auc:
+            logs['auc'] = auc
+            # wandb.plots.roc.roc(self.epoch_y, self.epoch_pred)
+        # print(logs)
+        wandb.log(logs)
 
 
 class BatchTransformXCallback(Callback):

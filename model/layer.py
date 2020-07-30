@@ -1,4 +1,5 @@
 # coding:utf8
+from collections import OrderedDict
 
 import numpy as np
 import torch
@@ -74,16 +75,16 @@ class FactorizationMachine(nn.Module):
 class MultiLayerPerceptron(nn.Module):
     def __init__(self, input_dim, hidden_dims, dropout, output_layer=True):
         super().__init__()
-        layers = list()
-        for layer_dim in hidden_dims:
-            layers.append(nn.Linear(input_dim, layer_dim))
-            layers.append(nn.BatchNorm1d(layer_dim))
-            layers.append(nn.ReLU())
-            layers.append(nn.Dropout(p=dropout))
+        layers = OrderedDict()
+        for idx, layer_dim in enumerate(hidden_dims):
+            layers['mlp_%s_linear' % idx] = nn.Linear(input_dim, layer_dim)
+            layers['mlp_%s_bn' % idx] = nn.BatchNorm1d(layer_dim)
+            layers['mlp_%s_relu' % idx] = nn.ReLU()
+            layers['mlp_%s_dropout' % idx] = nn.Dropout(p=dropout)
             input_dim = layer_dim
         if output_layer:
-            layers.append(nn.Linear(input_dim, 1))
-        self.mlp = nn.Sequential(*layers)
+            layers['mlp_last_linear'] = nn.Linear(input_dim, 1)
+        self.mlp = nn.Sequential(layers)
 
     def forward(self, x):
         """
@@ -167,7 +168,6 @@ class OuterProductLayer(nn.Module):
         if self.mode == 'mat':
             kp = p.unsqueeze(2) @ self.kernel @ q.unsqueeze(-1)  # [b,k,1,d]@[k,d,d]@[b,k,d,1] = [b,k,1,1]
             kp = kp.squeeze()  # [b,k]
-            return kp
             return kp
         else:
             kp = torch.sum(p * q * self.kernel, dim=-1)

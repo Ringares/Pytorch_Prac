@@ -1,6 +1,5 @@
 # coding:utf8
 from collections import namedtuple
-from functools import partial
 
 import pandas as pd
 import torch
@@ -11,11 +10,13 @@ from torch.utils.data import Dataset, DataLoader
 from model.pnn import ProductNeuralNetwork
 from utils import callback
 # from utils.learner import Learner
+from utils.regularization import Regularization
 
 __author__ = 'Sheng Lin'
 __date__ = '2020/7/2'
 
 data = pd.read_csv('~/Code/Machine_Learning/D2L/data/ml-100k-joined.csv')
+data = data.iloc[:1000]
 used_feature = ['user_id', 'item_id', 'rating',
                 'age', 'gender', 'occupation', 'zipcode',
                 'unknown', 'Action', 'Adventure', 'Animation', 'Children\'s',
@@ -89,18 +90,27 @@ vali_loader = DataLoader(
 ################################################################################
 dev = torch.device('cuda') if torch.cuda.is_available() else torch.device('cpu')
 
+hyper_params = {
+    'embed_dim': 8,
+    'mlp_dims': [16, 16],
+    'dropout': 0.4,
+    'lr': 1e-2,
+    'embed_l2': 1e-3
+}
+
 learner = callback.Learner(
-    model=ProductNeuralNetwork(feat_dims, 8, [8, 8], dropout=0.2, need_inner=True, need_outer=True),
+    model=ProductNeuralNetwork(feat_dims, 8, [16, 16], dropout=0.4, need_inner=True, need_outer=True),
     data=namedtuple('data', ['train_dl', 'valid_dl'])(train_loader, vali_loader),
     loss_func=torch.nn.BCELoss(),
     opt_func=torch.optim.Adam,
     lr=1e-2,
-    cbs=[callback.CudaCallback(dev)],
-    cb_funcs=[
-        partial(callback.AvgStatsCallback, None),
-        callback.RecordCallback,
-        callback.AucCallback
-    ]
+    cbs=[callback.CudaCallback(dev),
+         callback.RecordCallback(),
+         # callback.AvgStatsCallback(None),
+         # callback.AucCallback(),
+         callback.WandbCallback(metrics=None, need_auc=True, proj_name='deep_ctr', config=hyper_params)
+         ],
+    regular=Regularization(weight_decay=1e-3, param_name='embedding.weight')
 )
 
 learner.fit(10)
@@ -148,4 +158,27 @@ epoch 9: train: 0.27364331 valid: 0.44747178 48.4 sec
 epoch 9: vali_auc: 0.7700176163905753
 epoch 10: train: 0.26391821 valid: 0.46966738 52.2 sec
 epoch 10: vali_auc: 0.7703010951587367
+
+reg
+epoch 1: train: 0.42060195 valid: 0.38222295 69.9 sec
+epoch 1: vali_auc: 0.788768972695487
+epoch 2: train: 0.38561514 valid: 0.37744937 68.3 sec
+epoch 2: vali_auc: 0.7973852210694115
+epoch 3: train: 0.37024536 valid: 0.37523237 74.6 sec
+epoch 3: vali_auc: 0.801358452768178
+epoch 4: train: 0.35250771 valid: 0.37900913 76.6 sec
+epoch 4: vali_auc: 0.8013739348787678
+epoch 5: train: 0.33604150 valid: 0.37983635 74.6 sec
+epoch 5: vali_auc: 0.7997443109121771
+epoch 6: train: 0.32141218 valid: 0.39445149 71.8 sec
+epoch 6: vali_auc: 0.7958969934640252
+epoch 7: train: 0.31050200 valid: 0.41002412 69.1 sec
+epoch 7: vali_auc: 0.7876130788375177
+epoch 8: train: 0.30025811 valid: 0.42341470 75.9 sec
+epoch 8: vali_auc: 0.7782371264953787
+epoch 9: train: 0.28954702 valid: 0.42099180 72.6 sec
+epoch 9: vali_auc: 0.7837845629474522
+epoch 10: train: 0.28320300 valid: 0.43531743 72.4 sec
+epoch 10: vali_auc: 0.782463768619572
+
 """
